@@ -132,6 +132,13 @@ class HG630Router:
         self.stop_heartbeat = threading.Event()
         self.heartbeat_interval = 5
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.logout()
+
+
     def _hash_password(self, password, username):
         pwd_hash_hex = hashlib.sha256(password.encode()).hexdigest()
         pwd_hash_b64 = base64.b64encode(pwd_hash_hex.encode()).decode()
@@ -337,6 +344,58 @@ class HG630Router:
     def get_wlan_basic(self):
         return self._request("GET", "/api/ntwk/WlanBasic", parse_json=True)
 
+    def set_wifi(self, enable: bool):
+        if not self.is_logged_in:
+            print(" ✗ Not logged in.")
+            return False
+
+        self.refresh_csrf_root()
+
+        wifi_data = self.get_wlan_basic()
+        if not wifi_data or not isinstance(wifi_data, list):
+            print(" ✗ Failed to retrieve WiFi settings.")
+            return False
+
+        success = True
+        for ssid in wifi_data:
+            # Prepare the updated data based on the current SSID settings
+            ssid_to_update = ssid.copy()
+            ssid_to_update["WifiEnable"] = enable
+            ssid_to_update["isActiveItem"] = True
+
+            payload = {
+                "csrf": {"csrf_param": self.csrf_param, "csrf_token": self.csrf_token},
+                "data": ssid_to_update,
+                "action": "set"
+            }
+
+            try:
+                result = self._request("POST", "/api/ntwk/WlanBasic",
+                                       json_data=payload,
+                                       referer=f"{self.base_url}/html/advance.html",
+                                       parse_json=True)
+
+                if result and result.get('errcode') == 0:
+                    self._update_csrf_from_response(result)
+                else:
+                    # Some versions might prefer 'update' or no action
+                    payload["action"] = "update"
+                    result = self._request("POST", "/api/ntwk/WlanBasic",
+                                           json_data=payload,
+                                           referer=f"{self.base_url}/html/advance.html",
+                                           parse_json=True)
+                    if result and result.get('errcode') == 0:
+                        self._update_csrf_from_response(result)
+                    else:
+                        success = False
+            except self.APIError as e:
+                print(f" ✗ Error updating WiFi: {e}")
+                success = False
+
+        if success:
+            print(f" ✓ WiFi {'enabled' if enable else 'disabled'} successfully.")
+        return success
+
     def get_device_info(self):
         return self._request("GET", "/api/system/deviceinfo", parse_json=True)
 
@@ -416,15 +475,63 @@ class HG630Router:
             return False
 
     def get_wifi_password(self):
+        endpoints = [
+            "/api/ntwk/wlan_ssids",
+            "/api/ntwk/WlanBasic", 
+            "/api/ntwk/wifistatus"
+        ]
+        
+        for endpoint in endpoints:
+            try:
+                data = self._request("GET", endpoint, parse_json=True)
+                if data and isinstance(data, list) and len(data) > 0:
+                    for item in data:
+                        if isinstance(item, dict):
+                            pwd = item.get('WpaPreSharedKey') or item.get('KeyPassphrase')
+                            if pwd and pwd != '********':
+                                return data
+                    return data
+                elif data and isinstance(data, dict):
+                    if 'data' in data:
+                        return data['data']
+                    pwd = data.get('WpaPreSharedKey') or data.get('KeyPassphrase')
+                    if pwd and pwd != '********':
+                        return data
+            except:
+                pass
+        return None
+
+    def set_wifi(self, enable: bool):
+        if not self.is_logged_in:
+            print(" ✗ Not logged in.")
+            return False
+
+        self.refresh_csrf_root()
+
+        payload = {
+            "csrf": {"csrf_param": self.csrf_param, "csrf_token": self.csrf_token},
+            "data": {"Enable2G": enable}
+        }
+
         try:
-            data = self._request("GET", "/api/ntwk/wifistatus", parse_json=True)
-            if data and isinstance(data, list):
-                return data
-            elif data and isinstance(data, dict) and 'data' in data:
-                return data['data']
-        except:
-            pass
-        return self.get_wlan_basic()
+            result = self._request("POST", "/api/ntwk/wlanradio",
+                                   json_data=payload,
+                                   referer=f"{self.base_url}/html/advance.html",
+                                   parse_json=True)
+
+            if result and result.get('errcode') == 0:
+                print(f" ✓ WiFi turned {'ON' if enable else 'OFF'} successfully.")
+                self._update_csrf_from_response(result)
+                return True
+            else:
+                print(f" ✗ Router response: {result}")
+                return False
+        except self.APIError as e:
+            print(f" ✗ Error setting WiFi: {e}")
+            return False
+
+    def get_wifi_status(self):
+        return self._request("GET", "/api/ntwk/wlanradio", parse_json=True)
 
     def refresh_csrf_root(self):
         try:
@@ -532,6 +639,231 @@ class HG630Router:
 
         except self.APIError as e:
             print(f" ✗ Error setting parental control rule: {e}")
+            return False
+
+    def get_ddns(self):
+        return self._request("GET", "/api/ntwk/ddns", parse_json=True)
+
+    def set_ddns(self, enable: bool, provider: str = "", hostname: str = "", 
+                 username: str = "", password: str = ""):
+        if not self.is_logged_in:
+            print(" ✗ Not logged in.")
+            return False
+
+        self.refresh_csrf_root()
+
+        data_content = {
+            "Enable": enable,
+            "Provider": provider,
+            "HostName": hostname,
+            "Username": username,
+            "Password": password
+        }
+
+        payload = {
+            "csrf": {"csrf_param": self.csrf_param, "csrf_token": self.csrf_token},
+            "data": data_content
+        }
+
+        try:
+            result = self._request("POST", "/api/ntwk/ddns",
+                                   json_data=payload,
+                                   referer=f"{self.base_url}/html/advance.html",
+                                   parse_json=True)
+
+            if result and result.get('errcode') == 0:
+                print(f" ✓ DDNS settings updated.")
+                self._update_csrf_from_response(result)
+                return True
+            else:
+                print(f" ✗ Router response: {result}")
+                return False
+        except self.APIError as e:
+            print(f" ✗ Error setting DDNS: {e}")
+            return False
+
+    def get_nat(self):
+        return self._request("GET", "/api/ntwk/portmapping", parse_json=True)
+
+    def add_port_forward(self, name: str, external_port: int, internal_port: int,
+                         protocol: str, internal_ip: str, enable: bool = True):
+        if not self.is_logged_in:
+            print(" ✗ Not logged in.")
+            return False
+
+        self.refresh_csrf_root()
+
+        data_content = {
+            "Enable": enable,
+            "Name": name,
+            "ExternalPort": external_port,
+            "InternalPort": internal_port,
+            "Protocol": protocol.upper(),
+            "InternalClient": internal_ip
+        }
+
+        payload = {
+            "csrf": {"csrf_param": self.csrf_param, "csrf_token": self.csrf_token},
+            "action": "add",
+            "data": data_content
+        }
+
+        try:
+            result = self._request("POST", "/api/ntwk/portmapping",
+                                   json_data=payload,
+                                   referer=f"{self.base_url}/html/advance.html",
+                                   parse_json=True)
+
+            if result and result.get('errcode') == 0:
+                print(f" ✓ Port forward rule '{name}' added.")
+                self._update_csrf_from_response(result)
+                return True
+            else:
+                print(f" ✗ Router response: {result}")
+                return False
+        except self.APIError as e:
+            print(f" ✗ Error adding port forward: {e}")
+            return False
+
+    def delete_port_forward(self, rule_id: str):
+        if not self.is_logged_in:
+            print(" ✗ Not logged in.")
+            return False
+
+        self.refresh_csrf_root()
+
+        payload = {
+            "csrf": {"csrf_param": self.csrf_param, "csrf_token": self.csrf_token},
+            "action": "delete",
+            "data": {"ID": rule_id}
+        }
+
+        try:
+            result = self._request("POST", "/api/ntwk/portmapping",
+                                   json_data=payload,
+                                   referer=f"{self.base_url}/html/advance.html",
+                                   parse_json=True)
+
+            if result and result.get('errcode') == 0:
+                print(f" ✓ Port forward rule deleted.")
+                self._update_csrf_from_response(result)
+                return True
+            else:
+                print(f" ✗ Router response: {result}")
+                return False
+        except self.APIError as e:
+            print(f" ✗ Error deleting port forward: {e}")
+            return False
+
+    def get_upnp(self):
+        return self._request("GET", "/api/ntwk/upnp", parse_json=True)
+
+    def set_upnp(self, enable: bool):
+        if not self.is_logged_in:
+            print(" ✗ Not logged in.")
+            return False
+
+        self.refresh_csrf_root()
+
+        payload = {
+            "csrf": {"csrf_param": self.csrf_param, "csrf_token": self.csrf_token},
+            "data": {"Enable": enable}
+        }
+
+        try:
+            result = self._request("POST", "/api/ntwk/upnp",
+                                   json_data=payload,
+                                   referer=f"{self.base_url}/html/advance.html",
+                                   parse_json=True)
+
+            if result and result.get('errcode') == 0:
+                print(f" ✓ UPnP {'enabled' if enable else 'disabled'}.")
+                self._update_csrf_from_response(result)
+                return True
+            else:
+                print(f" ✗ Router response: {result}")
+                return False
+        except self.APIError as e:
+            print(f" ✗ Error setting UPnP: {e}")
+            return False
+
+    def get_firewall(self):
+        return self._request("GET", "/api/ntwk/firewall", parse_json=True)
+
+    def set_firewall(self, enable: bool, icmp_flood: bool = False, 
+                     syn_flood: bool = False, arp_attack: bool = False):
+        if not self.is_logged_in:
+            print(" ✗ Not logged in.")
+            return False
+
+        self.refresh_csrf_root()
+
+        data_content = {
+            "Enable": enable,
+            "IcmpFlooding": icmp_flood,
+            "SynFlooding": syn_flood,
+            "ArpAttack": arp_attack
+        }
+
+        payload = {
+            "csrf": {"csrf_param": self.csrf_param, "csrf_token": self.csrf_token},
+            "data": data_content
+        }
+
+        try:
+            result = self._request("POST", "/api/ntwk/firewall",
+                                   json_data=payload,
+                                   referer=f"{self.base_url}/html/advance.html",
+                                   parse_json=True)
+
+            if result and result.get('errcode') == 0:
+                print(f" ✓ Firewall settings updated.")
+                self._update_csrf_from_response(result)
+                return True
+            else:
+                print(f" ✗ Router response: {result}")
+                return False
+        except self.APIError as e:
+            print(f" ✗ Error setting firewall: {e}")
+            return False
+
+    def get_mac_filter(self):
+        return self._request("GET", "/api/ntwk/macfilter", parse_json=True)
+
+    def set_mac_filter(self, mac_address: str, enable: bool = True):
+        if not self.is_logged_in:
+            print(" ✗ Not logged in.")
+            return False
+
+        self.refresh_csrf_root()
+
+        data_content = {
+            "Enable": enable,
+            "MACAddress": mac_address.upper().replace('-', ':'),
+            "isActiveItem": True
+        }
+
+        payload = {
+            "csrf": {"csrf_param": self.csrf_param, "csrf_token": self.csrf_token},
+            "action": "add",
+            "data": data_content
+        }
+
+        try:
+            result = self._request("POST", "/api/ntwk/macfilter",
+                                   json_data=payload,
+                                   referer=f"{self.base_url}/html/advance.html",
+                                   parse_json=True)
+
+            if result and result.get('errcode') == 0:
+                print(f" ✓ MAC filter rule for {mac_address} {'enabled' if enable else 'disabled'}.")
+                self._update_csrf_from_response(result)
+                return True
+            else:
+                print(f" ✗ Router response: {result}")
+                return False
+        except self.APIError as e:
+            print(f" ✗ Error setting MAC filter: {e}")
             return False
 
     def reboot(self):
@@ -716,10 +1048,27 @@ def cmd_wifi_password(router):
             ssid = p.get('SSID') or p.get('WifiSsid')
             pwd = p.get('KeyPassphrase') or p.get('WpaPreSharedKey') or p.get('WepKey') or "Hidden/Unknown"
             print_kv("SSID", ssid)
-            print_kv("Password", pwd)
+            if pwd == '********':
+                print_kv("Password", "(masked by router - check web interface)")
+            else:
+                print_kv("Password", pwd)
             print("-")
     else:
         print("\nNo WiFi passwords found or failed to retrieve.")
+
+
+def cmd_wifi_status(router):
+    status = router.get_wifi_status()
+    if status and isinstance(status, dict):
+        enabled = status.get('Enable2G', False)
+        print(f"\n--- WiFi Status ---")
+        print_kv("2.4GHz WiFi", "ON" if enabled else "OFF")
+    else:
+        print(" ✗ Failed to retrieve WiFi status.")
+
+
+def cmd_wifi_toggle(router, enable: bool):
+    router.set_wifi(enable)
 
 
 def cmd_connected_devices(router):
@@ -801,6 +1150,96 @@ def cmd_set_parental(router, rule_name: str, macs: list, enable: bool, start: st
     router.set_parental_control(rule_name, macs, enable, start, end, cmd_set_parental)
 
 
+def cmd_ddns(router):
+    data = router.get_ddns()
+    if data and isinstance(data, dict):
+        print("\n--- DDNS Settings ---")
+        print_kv("Enabled", data.get('Enable'))
+        print_kv("Provider", data.get('Provider'))
+        print_kv("Hostname", data.get('HostName'))
+        print_kv("Username", data.get('Username'))
+        print_kv("Status", data.get('Status'))
+    else:
+        print(" ✗ Failed to retrieve DDNS settings.")
+
+
+def cmd_set_ddns(router, enable: bool, provider: str, hostname: str, username: str, password: str):
+    router.set_ddns(enable, provider, hostname, username, password)
+
+
+def cmd_nat(router):
+    data = router.get_nat()
+    if data and isinstance(data, list):
+        print(f"\n--- Port Forwarding Rules ({len(data)}) ---")
+        for rule in data:
+            print(f"\n[ {rule.get('Name', 'Unnamed')} ]")
+            print_kv("Enabled", rule.get('Enable'))
+            print_kv("External Port", rule.get('ExternalPort'))
+            print_kv("Internal Port", rule.get('InternalPort'))
+            print_kv("Protocol", rule.get('Protocol'))
+            print_kv("Internal IP", rule.get('InternalClient'))
+            print_kv("ID", rule.get('ID'))
+    else:
+        print(" ✗ No port forwarding rules found.")
+
+
+def cmd_add_nat(router, name: str, external_port: int, internal_port: int, protocol: str, internal_ip: str):
+    router.add_port_forward(name, external_port, internal_port, protocol, internal_ip)
+
+
+def cmd_delete_nat(router, rule_id: str):
+    router.delete_port_forward(rule_id)
+
+
+def cmd_upnp(router):
+    data = router.get_upnp()
+    if data and isinstance(data, dict):
+        print("\n--- UPnP Settings ---")
+        print_kv("Enabled", data.get('Enable'))
+    else:
+        print(" ✗ Failed to retrieve UPnP settings.")
+
+
+def cmd_set_upnp(router, enable: bool):
+    router.set_upnp(enable)
+
+
+def cmd_firewall(router):
+    data = router.get_firewall()
+    if data and isinstance(data, dict):
+        print("\n--- Firewall Settings ---")
+        print_kv("Enabled", data.get('Enable'))
+        print_kv("ICMP Flood Protection", data.get('IcmpFlooding'))
+        print_kv("SYN Flood Protection", data.get('SynFlooding'))
+        print_kv("ARP Attack Protection", data.get('ArpAttack'))
+    else:
+        print(" ✗ Failed to retrieve firewall settings.")
+
+
+def cmd_set_firewall(router, enable: bool, icmp_flood: bool, syn_flood: bool, arp_attack: bool):
+    router.set_firewall(enable, icmp_flood, syn_flood, arp_attack)
+
+
+def cmd_mac_filter_list(router):
+    data = router.get_mac_filter()
+    if data and isinstance(data, list):
+        print(f"\n--- MAC Filter Rules ({len(data)}) ---")
+        for rule in data:
+            status = "ENABLED" if rule.get('Enable') else "DISABLED"
+            print(f"\n[ {status} ]")
+            print_kv("MAC Address", rule.get('MACAddress'))
+            print_kv("ID", rule.get('ID'))
+    else:
+        print(" ✗ No MAC filter rules found.")
+
+
+def cmd_set_mac_filter(router, mac: str, enable: bool):
+    if not mac:
+        print("Error: MAC address is required.")
+        return
+    router.set_mac_filter(mac, enable)
+
+
 def cmd_reboot(router, auto_confirm=False):
     if not auto_confirm:
         confirm = input("Are you sure you want to REBOOT? (yes/no): ").lower()
@@ -848,6 +1287,10 @@ For more commands, run with --help
     subparsers.add_parser('device-info', help='Show router device information')
     subparsers.add_parser('wifi-settings', help='Show WiFi settings')
     subparsers.add_parser('wifi-password', help='Show WiFi passwords')
+    subparsers.add_parser('wifi-status', help='Show WiFi on/off status')
+
+    parser_wifi = subparsers.add_parser('wifi', help='Turn WiFi on or off')
+    parser_wifi.add_argument('state', choices=['on', 'off'], help='WiFi state: on or off')
     subparsers.add_parser('devices', help='Show connected devices')
     subparsers.add_parser('bandwidth', help='Show bandwidth/QoS settings')
 
@@ -873,6 +1316,48 @@ For more commands, run with --help
     parser_parental_set.add_argument('--start', default='00:00', help='Start time (HH:MM)')
     parser_parental_set.add_argument('--end', default='23:59', help='End time (HH:MM)')
     parser_parental_set.add_argument('--id', default='', help='Rule ID (for update)')
+
+    subparsers.add_parser('ddns', help='Show DDNS settings')
+
+    parser_set_ddns = subparsers.add_parser('set-ddns', help='Configure DDNS')
+    parser_set_ddns.add_argument('--enable', action='store_true', default=True)
+    parser_set_ddns.add_argument('--disable', action='store_true')
+    parser_set_ddns.add_argument('--provider', default='DynDNS', help='DDNS provider')
+    parser_set_ddns.add_argument('--hostname', required=True, help='Hostname')
+    parser_set_ddns.add_argument('--username', required=True, help='Username')
+    parser_set_ddns.add_argument('--password', required=True, help='Password')
+
+    subparsers.add_parser('nat', help='Show port forwarding rules')
+
+    parser_add_nat = subparsers.add_parser('add-nat', help='Add port forwarding rule')
+    parser_add_nat.add_argument('name', help='Rule name')
+    parser_add_nat.add_argument('external_port', type=int, help='External port')
+    parser_add_nat.add_argument('internal_port', type=int, help='Internal port')
+    parser_add_nat.add_argument('protocol', choices=['TCP', 'UDP', 'BOTH'], help='Protocol')
+    parser_add_nat.add_argument('internal_ip', help='Internal IP address')
+
+    parser_del_nat = subparsers.add_parser('del-nat', help='Delete port forwarding rule')
+    parser_del_nat.add_argument('id', help='Rule ID to delete')
+
+    subparsers.add_parser('upnp', help='Show UPnP settings')
+
+    parser_set_upnp = subparsers.add_parser('set-upnp', help='Enable/disable UPnP')
+    parser_set_upnp.add_argument('state', choices=['on', 'off'], help='UPnP state')
+
+    subparsers.add_parser('firewall', help='Show firewall settings')
+
+    parser_set_firewall = subparsers.add_parser('set-firewall', help='Configure firewall')
+    parser_set_firewall.add_argument('state', choices=['on', 'off'], help='Firewall state')
+    parser_set_firewall.add_argument('--icmp-flood', action='store_true', help='Enable ICMP flood protection')
+    parser_set_firewall.add_argument('--syn-flood', action='store_true', help='Enable SYN flood protection')
+    parser_set_firewall.add_argument('--arp-attack', action='store_true', help='Enable ARP attack protection')
+
+    subparsers.add_parser('mac-filter', help='Show MAC filter rules')
+
+    parser_set_mac = subparsers.add_parser('set-mac-filter', help='Add MAC filter rule')
+    parser_set_mac.add_argument('mac', help='MAC address (XX:XX:XX:XX:XX:XX)')
+    parser_set_mac.add_argument('--enable', action='store_true', default=True)
+    parser_set_mac.add_argument('--disable', action='store_true')
 
     parser_restart = subparsers.add_parser('restart-dsl', help='Restart DSL connection')
     parser_restart.add_argument('-y', '--yes', action='store_true', help='Skip confirmation prompt')
@@ -953,6 +1438,11 @@ For more commands, run with --help
             cmd_wifi_settings(router)
         elif args.command == 'wifi-password':
             cmd_wifi_password(router)
+        elif args.command == 'wifi-status':
+            cmd_wifi_status(router)
+        elif args.command == 'wifi':
+            enable = args.state == 'on'
+            cmd_wifi_toggle(router, enable)
         elif args.command == 'devices':
             cmd_connected_devices(router)
         elif args.command == 'rename-device':
@@ -973,6 +1463,33 @@ For more commands, run with --help
             macs = [m.strip() for m in args.macs.split(',')]
             enable = not args.disable
             cmd_set_parental(router, args.name, macs, enable, args.start, args.end, args.id)
+        elif args.command == 'ddns':
+            cmd_ddns(router)
+        elif args.command == 'set-ddns':
+            enable = not getattr(args, 'disable', False)
+            cmd_set_ddns(router, enable, args.provider, args.hostname, args.username, args.password)
+        elif args.command == 'nat':
+            cmd_nat(router)
+        elif args.command == 'add-nat':
+            protocol = args.protocol if args.protocol != 'BOTH' else 'TCP,UDP'
+            cmd_add_nat(router, args.name, args.external_port, args.internal_port, protocol, args.internal_ip)
+        elif args.command == 'del-nat':
+            cmd_delete_nat(router, args.id)
+        elif args.command == 'upnp':
+            cmd_upnp(router)
+        elif args.command == 'set-upnp':
+            enable = args.state == 'on'
+            cmd_set_upnp(router, enable)
+        elif args.command == 'firewall':
+            cmd_firewall(router)
+        elif args.command == 'set-firewall':
+            enable = args.state == 'on'
+            cmd_set_firewall(router, enable, args.icmp_flood, args.syn_flood, args.arp_attack)
+        elif args.command == 'mac-filter':
+            cmd_mac_filter_list(router)
+        elif args.command == 'set-mac-filter':
+            enable = not getattr(args, 'disable', False)
+            cmd_set_mac_filter(router, args.mac, enable)
         elif args.command == 'restart-dsl':
             cmd_restart_dsl(router, getattr(args, 'yes', False))
         elif args.command == 'reboot':
@@ -997,18 +1514,26 @@ def interactive_menu(router):
         print(" -- WiFi --")
         print("  4. WiFi Settings")
         print("  5. WiFi Password")
+        print("  6. WiFi Status (On/Off)")
+        print("  7. Toggle WiFi On/Off")
         print(" -- Devices --")
-        print("  6. Connected Devices")
-        print("  7. Rename Device")
-        print("  8. Delete Device")
+        print("  8. Connected Devices")
+        print("  9. Rename Device")
+        print(" 10. Delete Device")
         print(" -- Controls --")
-        print("  9. Bandwidth Settings")
-        print(" 10. Set Bandwidth Limit")
-        print(" 11. Parental Controls")
-        print(" 12. Set Parental Control")
+        print(" 11. Bandwidth Settings")
+        print(" 12. Set Bandwidth Limit")
+        print(" 13. Parental Controls")
+        print(" 14. Set Parental Control")
+        print(" -- Network --")
+        print(" 15. DDNS Settings")
+        print(" 16. Port Forwarding (NAT)")
+        print(" 17. UPnP Settings")
+        print(" 18. Firewall Settings")
+        print(" 19. MAC Filter")
         print(" -- System --")
-        print(" 13. Restart DSL Connection")
-        print(" 14. Reboot Router")
+        print(" 20. Restart DSL Connection")
+        print(" 21. Reboot Router")
         print("  0. Logout & Exit")
 
         try:
@@ -1027,22 +1552,36 @@ def interactive_menu(router):
         elif choice == "5":
             cmd_wifi_password(router)
         elif choice == "6":
-            cmd_connected_devices(router)
+            cmd_wifi_status(router)
         elif choice == "7":
-            interactive_rename(router)
+            interactive_wifi_toggle(router)
         elif choice == "8":
-            interactive_delete(router)
+            cmd_connected_devices(router)
         elif choice == "9":
-            cmd_bandwidth(router)
+            interactive_rename(router)
         elif choice == "10":
-            interactive_bandwidth(router)
+            interactive_delete(router)
         elif choice == "11":
-            cmd_parental_list(router)
+            cmd_bandwidth(router)
         elif choice == "12":
-            interactive_parental(router)
+            interactive_bandwidth(router)
         elif choice == "13":
-            cmd_restart_dsl(router)
+            cmd_parental_list(router)
         elif choice == "14":
+            interactive_parental(router)
+        elif choice == "15":
+            cmd_ddns(router)
+        elif choice == "16":
+            interactive_nat(router)
+        elif choice == "17":
+            interactive_upnp(router)
+        elif choice == "18":
+            interactive_firewall(router)
+        elif choice == "19":
+            cmd_mac_filter_list(router)
+        elif choice == "20":
+            cmd_restart_dsl(router)
+        elif choice == "21":
             cmd_reboot(router)
             break
         elif choice == "0":
@@ -1171,6 +1710,90 @@ def interactive_parental(router):
     rule_id = input("Rule ID (leave empty to create new): ").strip()
 
     router.set_parental_control(rule_name, mac_addresses, enable, start_time, end_time, rule_id)
+
+
+def interactive_wifi_toggle(router):
+    print("\n--- Toggle WiFi On/Off ---")
+    status = router.get_wifi_status()
+    if status and isinstance(status, dict):
+        current = status.get('Enable2G', False)
+        print(f"Current WiFi Status: {'ON' if current else 'OFF'}")
+    
+    confirm = input("Turn WiFi (on/off): ").strip().lower()
+    if confirm == "on":
+        router.set_wifi(True)
+    elif confirm == "off":
+        router.set_wifi(False)
+    else:
+        print("Invalid input. Use 'on' or 'off'.")
+
+
+def interactive_nat(router):
+    print("\n--- Port Forwarding (NAT) ---")
+    print("  1. List all rules")
+    print("  2. Add new rule")
+    print("  3. Delete rule")
+    print("  0. Back")
+    
+    choice = input("Select option: ").strip()
+    
+    if choice == "1":
+        cmd_nat(router)
+    elif choice == "2":
+        name = input("Rule name: ").strip()
+        try:
+            ext_port = int(input("External port: ").strip())
+            int_port = int(input("Internal port: ").strip())
+            proto = input("Protocol (TCP/UDP): ").strip().upper()
+            ip = input("Internal IP: ").strip()
+            if name and ext_port and int_port and proto and ip:
+                router.add_port_forward(name, ext_port, int_port, proto, ip)
+            else:
+                print(" ✗ All fields are required.")
+        except ValueError:
+            print(" ✗ Invalid port number.")
+    elif choice == "3":
+        rule_id = input("Enter Rule ID to delete: ").strip()
+        if rule_id:
+            router.delete_port_forward(rule_id)
+
+
+def interactive_upnp(router):
+    print("\n--- UPnP Settings ---")
+    data = router.get_upnp()
+    if data and isinstance(data, dict):
+        current = data.get('Enable', False)
+        print(f"Current UPnP Status: {'ON' if current else 'OFF'}")
+    
+    choice = input("Turn UPnP (on/off): ").strip().lower()
+    if choice == "on":
+        router.set_upnp(True)
+    elif choice == "off":
+        router.set_upnp(False)
+
+
+def interactive_firewall(router):
+    print("\n--- Firewall Settings ---")
+    data = router.get_firewall()
+    if data and isinstance(data, dict):
+        print(f"Enabled: {data.get('Enable')}")
+        print(f"ICMP Flood Protection: {data.get('IcmpFlooding')}")
+        print(f"SYN Flood Protection: {data.get('SynFlooding')}")
+        print(f"ARP Attack Protection: {data.get('ArpAttack')}")
+    
+    print("\n  1. Enable Firewall")
+    print("  2. Disable Firewall")
+    print("  3. Enable with DoS Protection")
+    print("  0. Back")
+    
+    choice = input("Select option: ").strip()
+    
+    if choice == "1":
+        router.set_firewall(True, False, False, False)
+    elif choice == "2":
+        router.set_firewall(False, False, False, False)
+    elif choice == "3":
+        router.set_firewall(True, True, True, True)
 
 
 if __name__ == "__main__":

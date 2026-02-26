@@ -1,183 +1,177 @@
-# Huawei HG630 VDSL Router API Client
+# 🚀 HG630 VDSL Router Manager (Advanced CLI)
 
-A Python client library for managing Huawei HG630 VDSL routers via their web API.
+A powerful, secure, and feature-rich command-line interface for managing **Huawei HG630 VDSL routers**. This tool allows you to monitor DSL statistics, manage connected devices, control bandwidth, and more—all without using the slow web interface.
 
-## Features
+---
 
-- **Full Authentication Flow**: Handles CSRF token extraction and password hashing
-- **Session Management**: Maintains session cookies and CSRF tokens automatically
-- **Error Handling**: Comprehensive error handling with specific exception types
-- **Modular Design**: Clean, well-documented, and easy to extend
-- **Context Manager Support**: Use with `with` statements for automatic cleanup
+## ✨ Key Features
 
-## Installation
+- **🔐 Secure Credential Storage**: Stored credentials are encoded in a local `.env` file for quick, autonomous operations.
+- **🎮 Multiple Modes**: Choose between a full **Interactive Menu** or fast **Direct Commands**.
+- **📡 Extensive Monitoring**: Real-time DSL stats, WAN status, and device lists.
+- **⚙️ Advanced Controls**: 
+    - Rename or delete connected devices.
+    - Set upload bandwidth limits.
+    - Configure Parental Control rules (MAC-based filtering with schedules).
+- **🌐 Network Features**:
+    - **DDNS**: Configure Dynamic DNS (DynDNS, No-IP, Oray, etc.)
+    - **Port Forwarding (NAT)**: Add, list, and delete port forwarding rules
+    - **UPnP**: Enable/disable Universal Plug and Play
+    - **Firewall**: Configure firewall with DoS protection (ICMP, SYN, ARP)
+    - **MAC Filter**: Block/allow devices by MAC address
+- **📶 WiFi Controls**:
+    - View WiFi settings and passwords
+    - Toggle WiFi on/off
+- **🔄 Session Management**: Automatic heartbeat keeps your session alive while the app is running.
+- **🛠️ System Actions**: Reboot the router or restart the DSL connection remotely.
+
+---
+
+## 🚀 Getting Started
+
+### 1. Installation
+
+Clone the repository and install the minimal dependencies:
 
 ```bash
+git clone https://github.com/yourusername/hg630-manager.git
+cd hg630-manager
 pip install -r requirements.txt
 ```
 
-## Quick Start
+### 2. Initial Setup
 
-### Basic Login Example
-
-```python
-from hg630 import HG630Client, LoginError
-
-# Initialize client
-client = HG630Client(router_ip="192.168.1.1")
-
-try:
-    # Login
-    result = client.login("admin", "your_password")
-    print(f"Logged in as {result.level.name}")
-    
-    # Check heartbeat
-    interval = client.heartbeat()
-    print(f"Session timeout: {interval}ms")
-    
-    # Logout when done
-    client.logout()
-    
-except LoginError as e:
-    print(f"Login failed: {e}")
-```
-
-### Using Context Manager (Recommended)
-
-```python
-from hg630 import HG630Client, LoginError
-
-try:
-    with HG630Client("192.168.1.1") as client:
-        client.login("admin", "your_password")
-        print("Successfully logged in!")
-        # Client automatically logs out on exit
-        
-except LoginError as e:
-    print(f"Error: {e}")
-```
-
-## Authentication Flow
-
-The client implements the complete authentication flow as documented in the HG630 API:
-
-1. **Fetch Initial Page**: GET `/` to extract `csrf_param` and `csrf_token` from HTML
-2. **Hash Password**: SHA256 hash of the plaintext password (64-character hex string)
-3. **Login Request**: POST `/api/system/user_login` with:
-   - `UserName`: The username (typically "admin")
-   - `Password`: SHA256 hash of the plaintext password
-   - CSRF tokens from step 1
-4. **Session Cookie**: The router returns a `SessionID_R3` cookie for subsequent requests
-5. **CSRF Token Update**: Each response includes new CSRF tokens (single-use)
-
-## Client Methods
-
-### `HG630Client(router_ip, timeout)`
-
-Initialize the client.
-
-- `router_ip`: IP address of the router (default: "192.168.1.1")
-- `timeout`: Request timeout in seconds (default: 30)
-
-### `get_initial_csrf()`
-
-Fetch the initial page and extract CSRF tokens. Called automatically by `login()` if needed.
-
-Returns: `CSRFToken` object with `param` and `token` attributes.
-
-### `login(username, password)`
-
-Authenticate with the router.
-
-- `username`: Router username
-- `password`: Plaintext password
-
-Returns: `LoginResult` object containing:
-- `level`: UserLevel enum (NOT_LOGGED_IN, USER, ADMIN, SUPPORT)
-- `is_first_login`: Boolean indicating first login
-- `is_wizard`: Boolean indicating wizard mode
-- `csrf`: CSRFToken for subsequent requests
-
-Raises: `LoginError` if authentication fails.
-
-### `logout()`
-
-Log out and invalidate the session. Called automatically when using context manager.
-
-### `heartbeat()`
-
-Send a heartbeat ping to keep the session alive. Should be called every 5 seconds.
-
-Returns: Heartbeat interval in milliseconds (typically 5000).
-
-### `is_logged_in()`
-
-Check if the client has an active session.
-
-Returns: `True` if logged in, `False` otherwise.
-
-### `get_user_level()`
-
-Get the current user's permission level.
-
-Returns: `UserLevel` enum value.
-
-## Error Handling
-
-The client raises specific exceptions:
-
-- **`LoginError`**: Authentication failures (wrong password, locked account, etc.)
-- **`APIError`**: General API failures (connection issues, invalid responses, etc.)
-
-## User Levels
-
-| Level | Name | Access |
-|-------|------|--------|
-| 0 | NOT_LOGGED_IN | No access |
-| 1 | USER | Limited access |
-| 2 | ADMIN | Full access |
-| 4 | SUPPORT | ISP support level |
-
-## Login Error Codes
-
-| Error Category | Meaning |
-|----------------|---------|
-| `user_pass_err` | Invalid username or password |
-| `Three_time_err` | 3 failed attempts, locked for 1 minute |
-| `Three_time_err_multi` | Multiple failed attempts, longer lockout |
-| `Duplicate_login` | User already logged in elsewhere |
-| `Too_Many_user` | Too many users logged in |
-
-## Session Management
-
-- CSRF tokens are **single-use** - each request returns new tokens
-- Sessions expire without heartbeat pings every ~5 seconds
-- The client automatically tracks and updates CSRF tokens
-- Sessions are tied to the `SessionID_R3` cookie
-
-## Examples
-
-See the `example_basic_login.py` file for a complete working example.
+Run the setup command to securely store your router's IP, username, and password:
 
 ```bash
-python example_basic_login.py
+python advanced_router.py setup
 ```
 
-## Technical Details
+---
 
-This client is based on reverse-engineered firmware analysis of the Huawei HG630 router:
+## 📖 Usage Examples
 
-- **Firmware**: HG630.bin (SquashFS extraction)
-- **Web Server**: Custom Huawei ATP web server (`bin/cms`)
-- **Backend**: Lua handlers
-- **Data Model**: TR-069 / TR-098 (`InternetGatewayDevice.*`)
+### 🎮 Interactive Mode (Recommended)
+Launch a user-friendly menu to access all features:
 
-## License
+```bash
+python advanced_router.py interactive
+# OR simply
+python advanced_router.py -i
+```
 
-MIT License
+### ⚡ Direct Commands
+Perform quick actions directly from the terminal:
 
-## References
+| Feature | Command |
+|---------|---------|
+| **DSL Stats** | `python advanced_router.py dsl` |
+| **Device List**| `python advanced_router.py devices` |
+| **WiFi Status**| `python advanced_router.py wifi-status` |
+| **WiFi On/Off**| `python advanced_router.py wifi on` / `wifi off` |
+| **WiFi Password** | `python advanced_router.py wifi-password` |
+| **Bandwidth** | `python advanced_router.py bandwidth` |
+| **DDNS** | `python advanced_router.py ddns` |
+| **Port Forwarding** | `python advanced_router.py nat` |
+| **UPnP** | `python advanced_router.py upnp` |
+| **Firewall** | `python advanced_router.py firewall` |
+| **MAC Filter** | `python advanced_router.py mac-filter` |
+| **Reboot** | `python advanced_router.py reboot` |
 
-- `HG630_API_REFERENCE.md`: Complete API documentation
-- `TASK.md`: Reverse engineering task documentation
-- `extracted_lua/user_login.lua`: Login handler source code
+### 🛠️ Advanced Command Examples
+
+**Set a Bandwidth Limit:**
+```bash
+# Set upload limit to 500kbps
+python advanced_router.py set-bandwidth --limit 500
+```
+
+**Configure Parental Control:**
+```bash
+# Create a rule to block specific MACs from 10 PM to 8 AM
+python advanced_router.py set-parental "Night-Block" "AA:BB:CC:DD:EE:FF" --start 22:00 --end 08:00
+```
+
+**Configure DDNS:**
+```bash
+python advanced_router.py set-ddns --hostname myhost.ddns.net --username user --password pass --provider DynDNS
+```
+
+**Port Forwarding:**
+```bash
+# Add a port forward rule
+python advanced_router.py add-nat "Web Server" 80 80 TCP 192.168.1.100
+
+# Delete a rule
+python advanced_router.py del-nat "rule_id_here"
+```
+
+**UPnP:**
+```bash
+python advanced_router.py set-upnp on
+python advanced advanced_router.py set-upnp off
+```
+
+**Firewall:**
+```bash
+# Enable with DoS protection
+python advanced_router.py set-firewall on --icmp-flood --syn-flood --arp-attack
+
+# Disable firewall
+python advanced_router.py set-firewall off
+```
+
+**MAC Filter:**
+```bash
+# Block a MAC address
+python advanced_router.py set-mac-filter "AA:BB:CC:DD:EE:FF"
+
+---
+
+## 🔐 Security & Configuration
+
+The app uses a `.env` file in the script directory to store your settings. 
+- **Passwords**: Currently stored using **Base64 encoding** in the `.env` file. This is necessary because the router's authentication flow requires a dynamic hash generated from the original password and a per-session CSRF token.
+- **Environment Variables**:
+    - `ROUTER_IP`: IP of your router (default: `192.168.1.1`).
+    - `STORED_USER`: Your router username.
+    - `CRED_PASSWORD`: The base64 encoded router password.
+
+
+---
+
+## 👩‍💻 For Developers: Python Client Library
+
+If you want to build your own tools, you can use the `HG630Router` class from `advanced_router.py`:
+
+```python
+from advanced_router import HG630Router
+
+with HG630Router("192.168.1.1") as router:
+    if router.login("admin", "your_password"):
+        devices = router.get_connected_devices()
+        print(f"Connected: {len(devices)} devices")
+```
+
+---
+
+## 📜 Technical Background
+
+This client reverse-engineers the **Huawei ATP web server** (found in `bin/cms`) and its **Lua-based API**.
+
+- **Firmware Path**: Based on HG630 V2 firmware analysis.
+- **API Model**: TR-069 / TR-098 standard (`InternetGatewayDevice`).
+- **Data Format**: Handled with `while(1);` security wrappers and custom JSON parsing.
+
+---
+
+## 📄 References
+
+- [HG630 API Reference](HG630_API_REFERENCE.md) - Deep dive into available endpoints.
+- [Task Log](TASK.md) - History of the reverse engineering process.
+
+---
+
+**Author:** Wael Adel (whhw31)  
+**License:** MIT
+

@@ -67,3 +67,37 @@ Create HG630_API_REFERENCE.md with:
 - Full auth flow documentation
 - Every endpoint categorized with URL, method, parameters, data model paths
 - Summary table of all endpoints at the end
+
+---
+
+## Implementation Log
+
+### 2024-02-26: New Features Added
+
+**Analyzed from firmware:**
+- `/api/ntwk/ddns` - DDNS configuration
+- `/api/ntwk/portmapping` - Port forwarding (NAT)
+- `/api/ntwk/upnp` - UPnP settings
+- `/api/ntwk/firewall` - Firewall with DoS protection
+- `/api/ntwk/macfilter` - MAC filtering
+
+**Added to advanced_router.py:**
+1. **WiFi Toggle** - Turn WiFi on/off via `/api/ntwk/wlanradio`
+2. **DDNS** - Get/set DDNS settings
+3. **Port Forwarding (NAT)** - List, add, delete port forwarding rules
+4. **UPnP** - Enable/disable UPnP
+5. **Firewall** - Configure firewall with DoS protection (ICMP, SYN, ARP)
+6. **MAC Filter** - Add MAC address to filter
+
+**CLI Commands Added:**
+- `wifi on` / `wifi off`
+- `wifi-status`
+- `ddns`, `set-ddns`
+- `nat`, `add-nat`, `del-nat`
+- `upnp`, `set-upnp`
+- `firewall`, `set-firewall`
+- `mac-filter`, `set-mac-filter`
+
+**Interactive Menu Updated:**
+- Added options 15-19 for network features
+- Added interactive functions for NAT, UPnP, Firewall
