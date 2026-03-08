@@ -34,7 +34,7 @@ A powerful, secure, and feature-rich command-line interface for managing **Huawe
 Clone the repository and install the minimal dependencies:
 
 ```bash
-git clone https://github.com/yourusername/hg630-manager.git
+git clone https://github.com/whhw31/hg630-manager.git
 cd hg630-manager
 pip install -r requirements.txt
 ```
